@@ -1,0 +1,10 @@
+prepare:
+  test_size: 0.2
+  random_state: 42
+  feature_timestamp: "2025-01-01"   # the CSV has no dates, so every row gets this one date
+  label_timestamp: "2025-02-01"     # label time must be >= feature time
+
+train:
+  n_estimators: 100
+  max_depth: 10
+  random_state: 42

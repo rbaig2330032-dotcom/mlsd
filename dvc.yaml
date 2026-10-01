@@ -1,0 +1,60 @@
+stages:
+  prepare:
+    cmd: python src/prepare.py data/raw/RetailSmart-CustomerBehavior.csv
+    deps:
+      - src/prepare.py
+      - data/raw/RetailSmart-CustomerBehavior.csv
+    params:
+      - prepare
+    outs:
+      - feature_repo/data/customer_stats.parquet
+      - feature_repo/data/customer_profile.parquet
+      - data/prepared/train_labels.parquet
+      - data/prepared/test_labels.parquet
+
+  feast_apply:
+    cmd: python src/feast_apply.py
+    deps:
+      - src/feast_apply.py
+      - feature_repo/features.py
+      - feature_repo/feature_store.yaml
+      - feature_repo/data/customer_stats.parquet
+      - feature_repo/data/customer_profile.parquet
+    outs:
+      - feature_repo/data/registry.db
+      - feature_repo/data/online_store.db
+
+  get_features:
+    cmd: python src/get_features.py
+    deps:
+      - src/get_features.py
+      - feature_repo/data/registry.db
+      - feature_repo/data/customer_stats.parquet
+      - feature_repo/data/customer_profile.parquet
+      - data/prepared/train_labels.parquet
+      - data/prepared/test_labels.parquet
+    outs:
+      - data/training/train.csv
+      - data/training/test.csv
+
+  train:
+    cmd: python src/train.py data/training/train.csv models/model.joblib
+    deps:
+      - src/train.py
+      - src/common.py
+      - data/training/train.csv
+    params:
+      - train
+    outs:
+      - models/model.joblib
+
+  evaluate:
+    cmd: python src/evaluate.py models/model.joblib data/training/test.csv metrics/metrics.json
+    deps:
+      - src/evaluate.py
+      - src/common.py
+      - models/model.joblib
+      - data/training/test.csv
+    metrics:
+      - metrics/metrics.json:
+          cache: false

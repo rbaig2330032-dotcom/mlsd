@@ -1,0 +1,7 @@
+dvc
+feast
+pandas
+pyarrow
+scikit-learn
+joblib
+pyyaml
