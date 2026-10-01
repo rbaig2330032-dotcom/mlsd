@@ -1,0 +1,5 @@
+outs:
+- md5: a4c73672ea866f826258aa4a40d0c161
+  size: 4431965
+  hash: md5
+  path: RetailSmart-CustomerBehavior.csv
