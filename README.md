@@ -56,7 +56,7 @@ retailsmart-dvc/
 
 ```mermaid
 flowchart LR
-    A[prepare] --> B[feast_apply] --> C[get_features] --> D[train] --> E[evaluate]
+    A[prepare] --> B[feast_apply] --> C[get_features] --> D[train] --> E[evaluate] 
 ```
 
 | Stage | What it does | Output |
@@ -115,14 +115,86 @@ dvc metrics show     # show the results
 ```bash
 python src/predict_online.py CUST000001 CUST000002 CUST000003
 ```
+### Prepare
 
+```bash
+%%writefile src/prepare.py
+"""Raw CSV -> Feast source parquets + label table."""
+import sys
+from pathlib import Path
+
+import pandas as pd
+import yaml
+
+params = yaml.safe_load(open("params.yaml"))["prepare"]
+raw = pd.read_csv(sys.argv[1])
+
+assert raw.Customer_ID.is_unique, "Customer_ID must be unique"
+assert raw.isna().sum().sum() == 0, "unexpected nulls"
+
+snapshot = pd.Timestamp(params["feature_timestamp"], tz="UTC")
+label_ts = snapshot + pd.Timedelta(days=params["label_offset_days"])
+
+STATS   = ["Complaints_count", "Satisfaction_Score", "Membership_yrs"]
+PROFILE = ["Age", "Gender", "City", "Is_Loyalty_Member"]
+
+Path("feature_repo/data").mkdir(parents=True, exist_ok=True)
+Path("data").mkdir(exist_ok=True)
+
+for cols, out in [(STATS, "customer_stats"), (PROFILE, "customer_profile")]:
+    df = raw[["Customer_ID"] + cols].copy()
+    df["event_timestamp"] = snapshot
+    df.to_parquet(f"feature_repo/data/{out}.parquet", index=False)
+
+# Labels live OUTSIDE the feature store.
+labels = raw[["Customer_ID", "Total_spent"]].copy()
+labels["event_timestamp"] = label_ts
+labels.to_parquet("data/labels.parquet", index=False)
+
+print(f"features snapshot={snapshot.date()}, labels ts={label_ts.date()}, rows={len(raw)}")
 ### Share data and model
 
 ```bash
 dvc push             # upload data/model to the DVC remote
 dvc pull             # download them (on a new machine after git clone)
 ```
+### Train
 
+```bash
+%%writefile src/train.py
+"""Train a Linear Regression model on RetailSmart data (parquet input from Feast)."""
+import sys, yaml, joblib
+import pandas as pd
+from pathlib import Path
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import OneHotEncoder
+from sklearn.linear_model import LinearRegression
+
+params = yaml.safe_load(open("params.yaml"))["train"]
+
+train_path = sys.argv[1]
+model_out  = Path(sys.argv[2])
+model_out.parent.mkdir(parents=True, exist_ok=True)
+
+df = pd.read_parquet(train_path)          # ✅ parquet, not csv
+
+DROP = ["Total_spent", "Customer_ID", "event_timestamp"]
+X = df.drop(columns=DROP)
+y = df["Total_spent"]
+
+CATEGORICAL = ["City", "Gender"]
+
+pipe = Pipeline([
+    ("prep", ColumnTransformer(
+        [("cat", OneHotEncoder(handle_unknown="ignore"), CATEGORICAL)],
+        remainder="passthrough")),
+    ("model", LinearRegression()),
+])
+
+pipe.fit(X, y)
+joblib.dump(pipe, model_out)
+print(f"saved {model_out}")
 ### Reproduce on another machine
 
 ```bash
@@ -131,8 +203,37 @@ pip install -r requirements.txt
 dvc pull             # get the raw data from the remote
 dvc repro            # rebuild everything
 ```
+### Evaluate
 
-### Try changing a parameter
+```bash
+%%writefile src/evaluate.py
+"""Evaluate model, write metrics.json."""
+import sys, json, joblib
+import pandas as pd
+import numpy as np
+from pathlib import Path
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+
+model_path   = sys.argv[1]
+test_path    = sys.argv[2]
+metrics_path = Path(sys.argv[3])
+metrics_path.parent.mkdir(parents=True, exist_ok=True)
+
+model = joblib.load(model_path)
+df = pd.read_parquet(test_path) if test_path.endswith(".parquet") else pd.read_csv(test_path)
+X = df.drop(columns=["Total_spent", "Customer_ID", "event_timestamp"])
+y = df["Total_spent"]
+
+pred = model.predict(X)
+metrics = {
+    "mae":  float(mean_absolute_error(y, pred)),
+    "rmse": float(np.sqrt(mean_squared_error(y, pred))),
+    "r2":   float(r2_score(y, pred)),
+}
+with open(metrics_path, "w") as f:
+    json.dump(metrics, f, indent=2)
+print(json.dumps(metrics, indent=2))
+### Experiment
 
 ```bash
 # edit params.yaml, e.g. train.n_estimators: 200
