@@ -1,7 +1,5 @@
-# RetailSmart: Customer Spending Prediction (DVC + Feast)
+# RetailSmart: Customer Spending Prediction 
 
-Course project for **DS-4491 Machine Learning Systems Design**.
-A reproducible ML pipeline managed with **DVC**, with **Feast** (feature store) as the bonus component.
 
 ## 1. Problem and Dataset
 
@@ -16,9 +14,7 @@ A reproducible ML pipeline managed with **DVC**, with **Feast** (feature store) 
 | Profile | `Age`, `Gender`, `City`, `Is_Loyalty_Member` |
 | **Target** | `Total_spent` |
 
-> **Note:** in this dataset `Total_spent = Visits_per_month × Avg_spend_per_visit` exactly, and the other columns are unrelated to it. The model therefore scores very high. The project is about the ML *workflow* (DVC + Feast), not about the difficulty of the prediction.
-
-The raw CSV is tracked by DVC (not stored in Git). Place it at `data/raw/RetailSmart-CustomerBehavior.csv`.
+> 
 
 ## 2. ML Model
 
@@ -73,7 +69,7 @@ flowchart LR
 
 The whole pipeline is reproduced with one command: `dvc repro`.
 
-## 5. Feast (Bonus)
+## 5. Feast
 
 - **Entity:** `customer` (key: `Customer_ID`).
 - **Feature views:** `customer_stats` (behaviour) and `customer_profile` (profile).
@@ -154,4 +150,3 @@ Test set (20,000 customers):
 | RMSE | ≈ 1.58 |
 | R² | ≈ 0.9998 |
 
-Exact values are written to `metrics/metrics.json` after `dvc repro`. The very high score is expected because the target is a product of two input columns (see the note in section 1).
